@@ -127,11 +127,9 @@ def process_files(ww_codes_file, tango_file, report_files):
                 })
 
         # Process Tango export if provided
+        # Process Tango export if provided
         if using_tango:
             tango_df = pd.read_excel(tango_file, engine='openpyxl', dtype=str).fillna('')
-
-            # Filter out rows where column Q contains "Other (NP)"
-            tango_df = tango_df[tango_df.iloc[:, 16] != "Other (NP)"]  # Column Q is index 16 (0-based)
 
             # Group by track title to handle multiple publishers
             grouped = tango_df.groupby(tango_df.iloc[:, 2])  # Group by track title (column C)
@@ -150,11 +148,14 @@ def process_files(ww_codes_file, tango_file, report_files):
 
                     publishers = []
                     publisher_codes = []
+                    other_np_indices = []  # Track which publishers have Other (NP)
                     composer = ww_rows.iloc[0, 4]  # Take composer from first row (column E)
 
-                    for _, row in ww_rows.iterrows():
+                    for idx, row in ww_rows.iterrows():
                         publishers.append(row.iloc[8])  # Publisher (column I)
                         publisher_codes.append(row.iloc[22])  # Publisher code (column W)
+                        if row.iloc[16] == "Other (NP)":  # Check column Q for "Other (NP)"
+                            other_np_indices.append(len(publishers) - 1)  # Store the index of the Other (NP) publisher
 
                     ww_lookup[normalized_title].append({
                         'source': 'tango',
@@ -162,7 +163,8 @@ def process_files(ww_codes_file, tango_file, report_files):
                         'ww_code': ww_code,
                         'composer': composer,
                         'publishers': publishers,
-                        'publisher_codes': publisher_codes
+                        'publisher_codes': publisher_codes,
+                        'other_np_indices': other_np_indices  # Store which publishers have Other (NP)
                     })
 
         all_matches = []
@@ -183,7 +185,6 @@ def process_files(ww_codes_file, tango_file, report_files):
                 for idx, row in report_df.iterrows():
                     title = normalize_title(str(row.iloc[4]))
                     composer = str(row.iloc[5])
-                    # Use get_composer_words instead of get_first_two_words
                     report_words, _ = get_composer_words(composer)
 
                     if title in ww_lookup:
@@ -223,18 +224,32 @@ def process_files(ww_codes_file, tango_file, report_files):
                                 if base_idx + 4 < len(code_columns):
                                     cols = code_columns[base_idx:base_idx + 5]
 
-                                    # Add WW Code
+                                    # Add WW Code with appropriate color
                                     report_df.loc[idx, cols[0]] = str(entry['ww_code'])
-                                    style_df.loc[idx, cols[0]] = 'background-color: lightgreen'
+                                    if entry.get('has_other_np', False):
+                                        style_df.loc[idx, cols[0]] = 'background-color: #ffcccc'  # Light red
+                                    else:
+                                        style_df.loc[idx, cols[0]] = 'background-color: lightgreen'
 
                                     if entry['source'] == 'tango':
-                                        # Handle Tango export data structure
+                                        # Handle Tango export data structure with color
                                         if len(entry['publishers']) > 0:
                                             report_df.loc[idx, cols[1]] = entry['publishers'][0]
                                             report_df.loc[idx, cols[2]] = entry['publisher_codes'][0]
+                                            # Only highlight if first publisher has Other (NP)
+                                            if 0 in entry.get('other_np_indices', []):
+                                                style_df.loc[idx, cols[1]] = 'background-color: #ffcccc'
+                                                style_df.loc[idx, cols[
+                                                    2]] = 'background-color: #ffcccc'  # Highlight even if code is empty
+
                                         if len(entry['publishers']) > 1:
                                             report_df.loc[idx, cols[3]] = entry['publishers'][1]
                                             report_df.loc[idx, cols[4]] = entry['publisher_codes'][1]
+                                            # Only highlight if second publisher has Other (NP)
+                                            if 1 in entry.get('other_np_indices', []):
+                                                style_df.loc[idx, cols[3]] = 'background-color: #ffcccc'
+                                                style_df.loc[idx, cols[
+                                                    4]] = 'background-color: #ffcccc'  # Highlight even if code is empty
                                     else:
                                         # Handle WW Codes data structure
                                         report_df.loc[idx, cols[1]] = str(entry['bmi_code'])
@@ -242,6 +257,7 @@ def process_files(ww_codes_file, tango_file, report_files):
                                         report_df.loc[idx, cols[3]] = str(entry['sesac_code'])
                                         report_df.loc[idx, cols[4]] = str(entry['publisher'])
 
+                                    # Add these lines HERE:
                                     all_matches.append({
                                         'File': report_file.name,
                                         'Row': idx + 1,
@@ -250,9 +266,9 @@ def process_files(ww_codes_file, tango_file, report_files):
                                         'Match Title': entry['original_title'],
                                         'Match Composer': entry['composer'],
                                         'WW Code': str(entry['ww_code']),
-                                        'Source': entry['source']
+                                        'Source': entry['source'],
+                                        'Has Other (NP)': 'Yes' if entry.get('has_other_np', False) else 'No'
                                     })
-
                                     used_codes.add(entry['ww_code'])
                                     matches_found += 1
                                     total_updates += 1
@@ -310,11 +326,18 @@ def create_download_zip(reports):
 
                         # Apply green highlighting to WW Code cells with values
                         if 'WW Code' in col and cell.value and str(cell.value).lower() != 'nan':
-                            cell.fill = openpyxl.styles.PatternFill(
-                                start_color='90EE90',
-                                end_color='90EE90',
-                                fill_type='solid'
-                            )
+                            if style_df_example.iloc[row_idx - 2, col_idx - 1] == 'background-color: #ffcccc':
+                                cell.fill = openpyxl.styles.PatternFill(
+                                    start_color='FFCCCC',
+                                    end_color='FFCCCC',
+                                    fill_type='solid'
+                                )
+                            else:
+                                cell.fill = openpyxl.styles.PatternFill(
+                                    start_color='90EE90',
+                                    end_color='90EE90',
+                                    fill_type='solid'
+                                )
 
             zip_file.writestr(f"processed_{report['name']}", excel_buffer.getvalue())
     return zip_buffer.getvalue()
