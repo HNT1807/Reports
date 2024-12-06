@@ -233,25 +233,25 @@ def process_files(ww_codes_file, tango_file, report_files):
 
                                     if entry['source'] == 'tango':
                                         # Handle Tango export data structure with color
-                                        if len(entry['publishers']) > 0:
-                                            report_df.loc[idx, cols[1]] = entry['publishers'][0]
-                                            report_df.loc[idx, cols[2]] = entry['publisher_codes'][0]
-                                            # Only highlight if first publisher has Other (NP)
-                                            if 0 in entry.get('other_np_indices', []):
-                                                style_df.loc[idx, cols[1]] = 'background-color: #ffcccc'
-                                                style_df.loc[idx, cols[
-                                                    2]] = 'background-color: #ffcccc'  # Highlight even if code is empty
+                                        for i, (publisher, pub_code) in enumerate(
+                                                zip(entry['publishers'], entry['publisher_codes'])):
+                                            base_idx = matches_found * 5  # Get the base index for this match
+                                            if base_idx + (i * 2) + 1 < len(
+                                                    code_columns):  # Make sure we have enough columns
+                                                # Calculate column positions for this publisher
+                                                pub_col = code_columns[base_idx + (i * 2) + 1]  # Publisher column
+                                                code_col = code_columns[base_idx + (i * 2) + 2]  # Code column
 
-                                        if len(entry['publishers']) > 1:
-                                            report_df.loc[idx, cols[3]] = entry['publishers'][1]
-                                            report_df.loc[idx, cols[4]] = entry['publisher_codes'][1]
-                                            # Only highlight if second publisher has Other (NP)
-                                            if 1 in entry.get('other_np_indices', []):
-                                                style_df.loc[idx, cols[3]] = 'background-color: #ffcccc'
-                                                style_df.loc[idx, cols[
-                                                    4]] = 'background-color: #ffcccc'  # Highlight even if code is empty
+                                                # Add publisher and code
+                                                report_df.loc[idx, pub_col] = publisher
+                                                report_df.loc[idx, code_col] = pub_code
+
+                                                # Add highlighting if this publisher has Other (NP)
+                                                if i in entry.get('other_np_indices', []):
+                                                    style_df.loc[idx, pub_col] = 'background-color: #ffcccc'
+                                                    style_df.loc[idx, code_col] = 'background-color: #ffcccc'
                                     else:
-                                        # Handle WW Codes data structure
+                                        # Handle WW Codes data structure (keeping this unchanged)
                                         report_df.loc[idx, cols[1]] = str(entry['bmi_code'])
                                         report_df.loc[idx, cols[2]] = str(entry['ascap_code'])
                                         report_df.loc[idx, cols[3]] = str(entry['sesac_code'])
